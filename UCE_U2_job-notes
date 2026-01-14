@@ -1,0 +1,60 @@
+### Jobs ran for UCE_U2 
+### "" only go around variable regions ie $NAME 
+
+Illumiprocessor
+#!/bin/bash
+#$ -q UI
+#$ -pe smp 32
+#$ -N illumiprocessor
+#$ -cwd
+#$ -o $JOB_NAME.out
+#$ -e $JOB_NAME.err
+#$ -M makella-steffensen@uiowa.edu
+#$ -m beas
+mamba run -n phyluce-1.7.3 illumiprocessor --input ~/UCE_RUNS/UCE_U2/raw-fastq --output clean-fastq --config illumiprocessor.conf --r1-pattern "{}_R1.fastq.gz" --r2-pattern "{}_R2.fastq.gz" --cores 32
+
+Spades assembly
+#!/bin/bash
+#$ -q UI
+#$ -pe smp 32
+#$ -N U2_spades
+#$ -cwd
+#$ -M msteffensen@uiowa.edu
+#$ -m beas
+#$ -o jobjunk/$JOB_NAME_$TASK_ID.out
+#$ -e jobjunk/$JOB_NAME_$TASK_ID.err
+#$ -t 7-89:1
+#$ -tc 4
+
+# Define file/folder variables
+SAMPLE_NAMES=sample_names.txt
+WORK_DIR=~/UCE_RUNS/UCE_U2/clean-fastq
+READ_DIR=split-adapter-quality-trimmed
+OUT_DIR=~/UCE_RUNS/UCE_U2/spades_assemblies
+
+# Read samples into array and select one based on array task ID
+mapfile -t NAMES < "$SAMPLE_NAMES"
+NAME=${NAMES[${SGE_TASK_ID}-1]}
+# NOTE: Array indexing in bash begins at 0, but the task ID numbering begins at 1. 
+# We must decrement task ID by 1 to avoid off-by-one error.
+
+echo "$NAME"
+
+# Run SPades assembler using mamba
+mamba run -n spades spades.py \
+        -1 "$WORK_DIR"/"$NAME"/"$READ_DIR"/"$NAME"-READ1.fastq.gz \
+        -2 "$WORK_DIR"/"$NAME"/"$READ_DIR"/"$NAME"-READ2.fastq.gz \
+        -s "$WORK_DIR"/"$NAME"/"$READ_DIR"/"$NAME"-READ-singleton.fastq.gz \
+        -t 32 \
+        -o "$OUT_DIR"/"$NAME" \
+
+# --pe1-1 is the flag for path to pair-end reads1
+# --pe1-2 is the flag for path to pair-end reads2
+# --pe1-s is the flag for path to pair-end singletons
+# -t sets number of threads, want to match with the number of threads requested
+# -o output location
+
+# Make contigs folder if it doesn't exist
+mkdir -p "$OUT_DIR"/contigs
+# Move contigs.fasta from assembly to the contigs folder
+mv "$OUT_DIR"/"$NAME"/contigs.fasta "$OUT_DIR"/contigs/"$NAME".contigs.fasta
