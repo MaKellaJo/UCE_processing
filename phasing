@@ -1,0 +1,3 @@
+for phasing go into the pilon script ex /old_Users/msteffensen/miniforge3/envs/phyluce-1.7.3/bin/pilon and change default_jvm_mem_opts = ['-Xms512m', '-Xmx1g'] to default_jvm_mem_opts = ['-Xms512m', '-Xmx100g']
+Ran on 128 threads for one sample
+trying for whole data set 
