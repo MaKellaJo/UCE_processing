@@ -58,3 +58,5 @@ mamba run -n spades spades.py \
 mkdir -p "$OUT_DIR"/contigs
 # Move contigs.fasta from assembly to the contigs folder
 mv "$OUT_DIR"/"$NAME"/contigs.fasta "$OUT_DIR"/contigs/"$NAME".contigs.fasta
+
+### in sample_names.txt make sure to NOT have an empty line at the end spades WILL NOT run if there is a space at the end
