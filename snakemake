@@ -1,0 +1,168 @@
+snakemake --snakefile trialworkflow.smk --dag | dot -Tsvg > dag.svg
+
+
+# UCE Snakemake Workflow
+import os
+configfile: "trialworkflowAQP.yaml"
+workdir:config["work_dir"]
+onstart:
+    print("Starting UCE Snakemake Workflow")
+
+
+taxonname=config["taxonname"]
+##### Output #####
+rule all:
+    input:
+        expand(
+            "{aligner}-nexus-{trim}-trimmed-clean-{p}p-raxml.phylip",
+            aligner=config["aligner"],
+            trim=config["trim"],
+            p=config["matrix_percentage"]
+        ),
+        "log/phyluce_align_get_align_summary_data.log"
+### This is the start for using multiple datasets ###
+rule get_match_counts:
+    input:
+        "/old_Users/msteffensen/UCE_RUNS/building/allnov/uce-search-results/probe.matches.sqlite"
+    output:
+        "{taxonname}-taxa-incomplete.conf"
+    params:
+        conda_env=config["conda_env"],
+        taxon_conf=config["taxon_conf"]
+    shell: 
+        "mamba run -n {params.conda_env} "
+        "phyluce_assembly_get_match_counts "
+        "--locus-db {input} "
+        "--taxon-list-config {params.taxon_conf} "
+        "--taxon-group '{taxonname}' "
+        "--incomplete-matrix "
+        "--output {output} "
+
+rule get_fastas:
+    input:
+        "{taxonname}-taxa-incomplete.conf"
+    output:
+        "{taxonname}-taxa-incomplete.fasta"
+    params:
+        conda_env=config["conda_env"],
+        contigs=config["contigs"]
+    shell:
+        "mkdir -p log; "
+        "mamba run -n {params.conda_env} "
+        "phyluce_assembly_get_fastas_from_match_counts "
+        "--contigs {param.contigs} "
+        "--locus-db ../../uce-search-results/probe.matches.sqlite "
+        "--match-count-output {input} "
+        "--output {output} "
+        "--incomplete-matrix {taxonname}-taxa-incomplete.incomplete "
+
+
+##### Aligning Loci #####
+rule trimming:
+    input:
+        expand("{taxonname}-taxa-incomplete.conf",
+            taxonname=config["taxonname"])
+    output:
+        directory(
+            expand(
+                "{aligner}-nexus-{trim}-trimmed",
+                aligner=config["aligner"],
+                trim=config["trim"]))
+    params:
+        conda_env=config["conda_env"],
+        aligner=config["aligner"],
+        taxa=config["taxa"]
+    threads:
+        config["trimming_threads"]
+    shell:
+        "mamba run -n {params.conda_env} phyluce_align_seqcap_align "
+        "--input {input} "
+        "--output {output} "
+        "--taxa {params.taxa} "
+        "--aligner {params.aligner} "
+        "--cores {threads} "
+        "--incomplete-matrix "
+
+rule align_summary:
+    input: 
+        expand(
+            "{aligner}-nexus-{trim}-trimmed",
+            aligner=config["aligner"],
+            trim=config["trim"])
+    output:
+        "log/phyluce_align_get_align_summary_data.log"
+    params:
+        conda_env=config["conda_env"]
+    threads:
+        config["align_sum_threads"]
+    shell:
+        "mamba run -n {params.conda_env} phyluce_align_get_align_summary_data "
+        "--alignments {input} "
+        "--cores {threads} "
+
+
+
+##### Alignment Cleaning #####
+rule remove_locus_names:
+    input:
+        "{aligner}-nexus-{trim}-trimmed"
+    output:
+        directory(
+                "{aligner}-nexus-{trim}-trimmed-clean")
+
+    params:
+        conda_env=config["conda_env"]
+    threads:
+        config["remove_locus_names_threads"]
+    shell: 
+        "mamba run -n {params.conda_env} phyluce_align_remove_locus_name_from_files "
+        "--alignments {input} "
+        "--output {output} "
+        "--cores {threads} "
+
+
+rule make_matrix:
+    input:
+        expand(
+            "{aligner}-nexus-{trim}-trimmed-clean",
+            aligner=config["aligner"],
+            trim=config["trim"]
+        )
+    output:
+        directory(
+            expand(
+                "{aligner}-nexus-{trim}-trimmed-clean-{p}p",
+                aligner=config["aligner"],
+                trim=config["trim"],
+                p=config["matrix_percentage"]
+            )
+        )
+    params:
+        conda_env=config["conda_env"],
+        taxa=config["taxa"],
+        percent=config["matrix_percentage"]
+    threads:
+        config["make_matrix_threads"]
+    shell:
+        "mamba run -n {params.conda_env} phyluce_align_get_only_loci_with_min_taxa "
+        "--alignments {input} "
+        "--taxa {params.taxa} "
+        "--percent 0.{params.percent} "
+        "--output {output} "
+        "--cores {threads} "
+
+
+rule make_phylip:
+    input:
+        "{aligner}-nexus-{trim}-trimmed-clean-{p}p"
+    output:
+        "{aligner}-nexus-{trim}-trimmed-clean-{p}p-raxml.phylip"
+    params:
+        conda_env=config["conda_env"]
+    threads:
+        config["make_phy_threads"]
+    shell:
+        "mamba run -n {params.conda_env} phyluce_align_concatenate_alignments "
+        "--alignments {input} "
+        "--output {output} "
+        "--phylip "
